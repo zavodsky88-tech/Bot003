@@ -1,104 +1,135 @@
 import telebot
+from telebot import types
 import requests
-import os
 
-# === Telegram ===
-#TOKEN = os.getenv("BOT_TOKEN")  # вставляешь свой токен
-#ADMIN_ID = int(os.getenv("ADMIN_ID"))  # твой Telegram ID
-TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"  # вставляешь свой токен
-ADMIN_ID = 1979125261  # твой Telegram ID
+# ===================== НАСТРОЙКИ =====================
+TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"  # вставь свой токен
+ADMIN_ID = 1979125261  # твой Telegram ID для уведомлений
+
+# Ссылка на Google Form (используем POST-запрос)
+GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd_QdRSLL99UZUfgC3fvRPhiGCmSGKty_eqe-suR43yWDezzA/formResponse"
+
+ENTRY_NUMBER = "entry.2110379223"
+ENTRY_NAME = "entry.1234675755"
+ENTRY_PHONE = "entry.1260653739"
+ENTRY_SERVICE = "entry.490319395"
+ENTRY_DATE = "entry.1667947668"
+ENTRY_COMMENT = "entry.2029165293"
+
+# ===================== ПЕРЕМЕННЫЕ =====================
+user_data = {}  # временно хранит данные пользователя
+last_number = 0  # счетчик заявок
 
 bot = telebot.TeleBot(TOKEN)
 
-# === Google Form ===
-FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSeMNIey07M9Sa8Wotf6UD45EYM05ocIj5oGTOwHEH4kQEbpg/formResponse"
+# ===================== ФУНКЦИИ =====================
 
-# Здесь твои entry ID
-ENTRY_NAME = "entry.1444140936"
-ENTRY_PHONE = "entry.404021015"
-ENTRY_SERVICE = "entry.913156250"
-ENTRY_DATE = "entry.339452627"
-ENTRY_NUMBER = "entry.1669580791"
+def next_request_number():
+    global last_number
+    last_number += 1
+    return f"{last_number:07d}"  # 0000001, 0000002
 
-crm = {}
-counter = 1
+def send_to_google_form(data):
+    payload = {
+        ENTRY_NAME: data.get("name", ""),
+        ENTRY_PHONE: data.get("phone", ""),
+        ENTRY_SERVICE: data.get("service", ""),
+        ENTRY_DATE: data.get("date", ""),
+        ENTRY_COMMENT: data.get("comment", ""),
+        ENTRY_NUMBER: data.get("number", "")
+    }
+    requests.post(GOOGLE_FORM_URL, data=payload)
 
-def next_number():
-    global counter
-    num = str(counter).zfill(6)
-    counter += 1
-    return num
+# ===================== МЕНЮ =====================
 
-def send_to_form(data):
-    try:
-        r = requests.post(FORM_URL, data=data)
-        if r.status_code != 200:
-            print("Ошибка отправки формы:", r.status_code)
-    except Exception as e:
-        print("Ошибка:", e)
+@bot.message_handler(commands=['start'])
+def start(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("✨ Подобрать услугу", "💰 Цены")
+    markup.add("📅 Записаться", "📍 Контакты")
+    markup.add("❓ Помощь")
+    bot.send_message(message.chat.id,
+                     "💅 Привет! Я помощник салона.\nПомогу записаться 💖",
+                     reply_markup=markup)
 
-# === Telegram handlers ===
+# ===================== ОБРАБОТКА КНОПОК =====================
 
-@bot.message_handler(commands=["start"])
-def start(m):
-    bot.send_message(
-        m.chat.id,
-        "💅 Привет! Я помощник салона.\nПомогу записаться 💖",
-        reply_markup=menu()
-    )
+@bot.message_handler(func=lambda m: m.text == "💰 Цены")
+def prices(message):
+    text = "💅 Наши цены:\n\nМаникюр — от 1000 ₽\nСтрижка — от 800 ₽\nБрови — от 500 ₽"
+    bot.send_message(message.chat.id, text)
 
-def menu():
-    kb = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("✨ Подобрать услугу", "📅 Записаться")
-    return kb
+@bot.message_handler(func=lambda m: m.text == "📍 Контакты")
+def contacts(message):
+    bot.send_message(message.chat.id, "📍 Наш адрес: г. Москва, ул. Примерная, 1\n📞 Телефон: +7 999 999-99-99")
+
+@bot.message_handler(func=lambda m: m.text == "❓ Помощь")
+def help_menu(message):
+    bot.send_message(message.chat.id, "Вы можете выбрать услугу, посмотреть цены, записаться или узнать контакты салона.")
+
+# ===================== ПОДБОР УСЛУГИ =====================
 
 @bot.message_handler(func=lambda m: m.text == "✨ Подобрать услугу")
-def recommend(m):
-    bot.send_message(m.chat.id, "Рекомендую: Маникюр + дизайн\nХочешь записаться?")
+def pick_priority(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("💨 Быстро", "✨ Эффектно", "💆‍♀️ Уход")
+    markup.add("🔙 В меню")
+    bot.send_message(message.chat.id, "Что для тебя важнее сегодня?", reply_markup=markup)
 
-@bot.message_handler(func=lambda m: m.text == "📅 Записаться")
-def ask_name(m):
-    crm[m.chat.id] = {}
-    bot.send_message(m.chat.id, "Как тебя зовут?")
-
-@bot.message_handler(func=lambda m: m.chat.id in crm and "name" not in crm[m.chat.id])
-def get_name(m):
-    crm[m.chat.id]["name"] = m.text
-    bot.send_message(m.chat.id, "Телефон 📞")
-
-@bot.message_handler(func=lambda m: m.chat.id in crm and "phone" not in crm[m.chat.id])
-def get_phone(m):
-    crm[m.chat.id]["phone"] = m.text
-    bot.send_message(m.chat.id, "Услуга?")
-
-@bot.message_handler(func=lambda m: m.chat.id in crm and "service" not in crm[m.chat.id])
-def get_service(m):
-    crm[m.chat.id]["service"] = m.text
-    bot.send_message(m.chat.id, "Дата?")
-
-@bot.message_handler(func=lambda m: m.chat.id in crm and "date" not in crm[m.chat.id])
-def finish(m):
-    number = next_number()
-    crm[m.chat.id]["date"] = m.text
-
-    data = {
-        ENTRY_NAME: crm[m.chat.id]["name"],
-        ENTRY_PHONE: crm[m.chat.id]["phone"],
-        ENTRY_SERVICE: crm[m.chat.id]["service"],
-        ENTRY_DATE: crm[m.chat.id]["date"],
-        ENTRY_NUMBER: number
+@bot.message_handler(func=lambda m: m.text in ["💨 Быстро", "✨ Эффектно", "💆‍♀️ Уход"])
+def recommend_service(message):
+    priority = message.text
+    services = {
+        "💨 Быстро": ["Экспресс-маникюр (40 мин)"],
+        "✨ Эффектно": ["Маникюр + дизайн", "Стрижка + укладка"],
+        "💆‍♀️ Уход": ["Маникюр + SPA-уход", "Макияж"]
     }
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for s in services[priority]:
+        markup.add(s)
+    markup.add("🔄 Другая опция", "🔙 В меню")
+    bot.send_message(message.chat.id, f"✨ Рекомендую:", reply_markup=markup)
 
-    send_to_form(data)
+@bot.message_handler(func=lambda m: m.text in ["🔄 Другая опция", "🔙 В меню"])
+def go_back_or_repeat(message):
+    if message.text == "🔙 В меню":
+        start(message)
+    else:
+        pick_priority(message)
 
-    bot.send_message(m.chat.id, f"✅ Запись принята! Номер заявки: {number} 💖")
-    bot.send_message(
-        ADMIN_ID,
-        f"🆕 Заявка #{number}\n"
-        f"{crm[m.chat.id]['name']} | {crm[m.chat.id]['phone']}\n"
-        f"{crm[m.chat.id]['service']} | {crm[m.chat.id]['date']}"
-    )
+# ===================== ЗАПИСЬ НА УСЛУГУ =====================
 
-    del crm[m.chat.id]
+@bot.message_handler(func=lambda m: True)
+def ask_info(message):
+    text = message.text
+    if text not in ["✨ Подобрать услугу", "💰 Цены", "📅 Записаться", "📍 Контакты", "❓ Помощь",
+                    "💨 Быстро", "✨ Эффектно", "💆‍♀️ Уход", "🔄 Другая опция", "🔙 В меню"]:
+        if "service" not in user_data:
+            user_data["service"] = text
+            bot.send_message(message.chat.id, "Как тебя зовут?")
+        elif "name" not in user_data:
+            user_data["name"] = text
+            bot.send_message(message.chat.id, "Оставь номер телефона 📞")
+        elif "phone" not in user_data:
+            user_data["phone"] = text
+            bot.send_message(message.chat.id, "На какую дату хочешь записаться? (например: 5 февраля)")
+        elif "date" not in user_data:
+            user_data["date"] = text
+            bot.send_message(message.chat.id, "Если есть комментарий к записи, напиши его. Если нет — отправь '-'")
+        elif "comment" not in user_data:
+            user_data["comment"] = text
+            user_data["number"] = next_request_number()
+            # Отправляем в Google Form
+            send_to_google_form(user_data)
+            # Уведомляем администратора
+            bot.send_message(ADMIN_ID,
+                             f"🆕 Новая заявка #{user_data['number']}\n"
+                             f"{user_data['name']} | {user_data['phone']}\n"
+                             f"{user_data['service']} | {user_data['date']}\n"
+                             f"Комментарий: {user_data['comment']}")
+            bot.send_message(message.chat.id,
+                             f"✅ Запись принята! Номер заявки: {user_data['number']}\nАдминистратор скоро свяжется с тобой 💖")
+            user_data.clear()  # очищаем данные после записи
 
-bot.polling(none_stop=True)
+# ===================== ЗАПУСК =====================
+bot.infinity_polling()
