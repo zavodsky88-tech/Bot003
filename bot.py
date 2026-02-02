@@ -14,7 +14,7 @@ from telegram.ext import (
 # ================= НАСТРОЙКИ =================
 
 TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"  # токен бота
-ADMIN_ID = 1979125261 # твой Telegram ID
+ADMIN_ID = 1979125261  # твой Telegram ID
 
 GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1Qj4hWyDn_fw0YyWYA2Igdr9Fyi5Sn0p4XHdcrdSXlJQ/formResponse"
 
@@ -46,6 +46,7 @@ MAIN = ReplyKeyboardMarkup(
 CATEGORIES = ReplyKeyboardMarkup(
     [["💨 Быстро", "💆‍♀️ Уход"],
      ["✨ Эффектно"],
+     ["📋 Показать все услуги"],
      ["🔙 Назад"]],
     resize_keyboard=True
 )
@@ -107,14 +108,16 @@ def send_to_google_form(data: dict):
         FORM_FIELDS["date"]: data["date"],
         FORM_FIELDS["comment"]: data["comment"],
     }
-    requests.post(GOOGLE_FORM_URL, data=payload, timeout=10)
+    try:
+        requests.post(GOOGLE_FORM_URL, data=payload, timeout=10)
+    except Exception as e:
+        logging.error(f"Ошибка отправки формы: {e}")
 
 
 def upsell_text(service: str) -> str:
     if "дизайн" not in service.lower():
         return "💎 Хочешь добавить дизайн? Маникюр будет выглядеть эффектнее ✨"
     return "🫧 Добавим уход? Кожа станет мягче и результат продержится дольше 💖"
-
 
 # ================= ХЭНДЛЕРЫ =================
 
@@ -130,7 +133,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     # ===== СТАТИЧЕСКИЕ РАЗДЕЛЫ =====
-
     if text == "💰 Цены":
         await update.message.reply_text(
             "💰 Прайс-лист:\n\n"
@@ -164,17 +166,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    if text == "📅 Записаться":
+    if text == "📅 Записаться" or text == "✨ Подобрать услугу":
         await update.message.reply_text(
-            "Отлично 😊\nДавай подберём услугу 👇",
-            reply_markup=CATEGORIES
+            "Что для тебя важнее сегодня?", reply_markup=CATEGORIES
         )
-        return
-
-
-    # --- Главное меню ---
-    if text == "✨ Подобрать услугу":
-        await update.message.reply_text("Что для тебя важнее сегодня?", reply_markup=CATEGORIES)
         return
 
     if text == "📋 Показать все услуги":
@@ -241,6 +236,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     send_to_google_form(context.user_data)
 
+    # Отправка пользователю
     await update.message.reply_text(
         f"🆕 Новая заявка #{order_id}\n\n"
         f"{context.user_data['name']} | {context.user_data['phone']}\n"
@@ -251,7 +247,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=MAIN
     )
 
-    # админу
+    # Администратору
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=f"📥 Заявка #{order_id}\n{context.user_data}"
@@ -259,20 +255,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
 
-
 # ================= ЗАПУСК =================
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
-    # Хэндлеры
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Запуск бота
     app.run_polling()
-
-
 
 if __name__ == "__main__":
     main()
