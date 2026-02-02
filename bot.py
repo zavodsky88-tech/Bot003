@@ -16,7 +16,7 @@ from telegram.ext import (
 TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"  # токен бота
 ADMIN_ID = 1979125261 # твой Telegram ID
 
-GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/XXXXXXXXXXXX/formResponse"
+GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1Qj4hWyDn_fw0YyWYA2Igdr9Fyi5Sn0p4XHdcrdSXlJQ/formResponse"
 
 FORM_FIELDS = {
     "name": "entry.2110379223",
