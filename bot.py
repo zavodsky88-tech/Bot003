@@ -124,18 +124,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "service" in context.user_data and "upsell_done" not in context.user_data:
         if text in ["➕ Добавить дизайн", "➕ Добавить уход"]:
             context.user_data["service"] += f" + {text.replace('➕ ', '')}"
-        # ❌ Без допов — просто пропускаем допы
+        # ❌ Без допов — ничего не добавляем
         context.user_data["upsell_done"] = True
         await update.message.reply_text("Как тебя зовут?")
         return
 
 
+
     # --- Имя ---
     if "name" not in context.user_data:
+        # Любой текст здесь — имя
         context.user_data["name"] = text
         await update.message.reply_text("Оставь номер телефона 📞\nФормат: +79991234567")
         return
-
+    
     # --- Телефон ---
     if "phone" not in context.user_data:
         if not is_phone(text):
