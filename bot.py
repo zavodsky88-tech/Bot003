@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # ================= НАСТРОЙКИ =================
 TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"
 ADMIN_ID = 1979125261
-GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1Qj4hWyDn_fw0YyWYA2Igdr9Fyi5Sn0p4XHdcrdSXlJQ/formResponse"
+GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd_QdRSLL99UZUfgC3fvRPhiGCmSGKty_eqe-suR43yWDezzA/formResponse"
 
 FORM_FIELDS = {
     "name": "entry.2110379223",
@@ -16,7 +16,31 @@ FORM_FIELDS = {
     "service": "entry.1260653739",
     "date": "entry.490319395",
     "comment": "entry.1667947668",
+    # Можно добавить ещё поля, если нужно
+    "order_id": "entry.2029165293"
 }
+
+def send_to_google_form(data: dict):
+    """
+    Отправляет данные пользователя в Google Form
+    """
+    payload = {
+        FORM_FIELDS["name"]: data.get("name", "-"),
+        FORM_FIELDS["phone"]: data.get("phone", "-"),
+        FORM_FIELDS["service"]: data.get("service", "-"),
+        FORM_FIELDS["date"]: data.get("date", "-"),
+        FORM_FIELDS["comment"]: data.get("comment", "-"),
+        FORM_FIELDS["order_id"]: data.get("order_id", "-")
+    }
+
+    try:
+        response = requests.post(GOOGLE_FORM_URL, data=payload, timeout=10)
+        if response.status_code == 200:
+            logging.info("Заявка успешно отправлена в Google Form")
+        else:
+            logging.error("Ошибка при отправке в Google Form: %s", response.status_code)
+    except requests.exceptions.RequestException as e:
+        logging.error("Ошибка при соединении с Google Form: %s", e)
 
 ID_FILE = "order_id.txt"
 
