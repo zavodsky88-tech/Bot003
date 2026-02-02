@@ -1,135 +1,226 @@
-import telebot
-from telebot import types
+import logging
+import os
+import re
 import requests
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
-# ===================== НАСТРОЙКИ =====================
-TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"  # вставь свой токен
-ADMIN_ID = 1979125261  # твой Telegram ID для уведомлений
+# ================= НАСТРОЙКИ =================
 
-# Ссылка на Google Form (используем POST-запрос)
-GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd_QdRSLL99UZUfgC3fvRPhiGCmSGKty_eqe-suR43yWDezzA/formResponse"
+TOKEN = os.getenv("8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI")  # токен бота
+ADMIN_ID = int(os.getenv("1979125261"))  # твой Telegram ID
 
-ENTRY_NUMBER = "entry.2110379223"
-ENTRY_NAME = "entry.1234675755"
-ENTRY_PHONE = "entry.1260653739"
-ENTRY_SERVICE = "entry.490319395"
-ENTRY_DATE = "entry.1667947668"
-ENTRY_COMMENT = "entry.2029165293"
+GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/XXXXXXXXXXXX/formResponse"
 
-# ===================== ПЕРЕМЕННЫЕ =====================
-user_data = {}  # временно хранит данные пользователя
-last_number = 0  # счетчик заявок
+FORM_FIELDS = {
+    "name": "entry.2110379223",
+    "phone": "entry.1234675755",
+    "service": "entry.1260653739",
+    "date": "entry.490319395",
+    "comment": "entry.1667947668",
+}
 
-bot = telebot.TeleBot(TOKEN)
+ID_FILE = "order_id.txt"
 
-# ===================== ФУНКЦИИ =====================
+# ================= ЛОГИ =================
 
-def next_request_number():
-    global last_number
-    last_number += 1
-    return f"{last_number:07d}"  # 0000001, 0000002
+logging.basicConfig(level=logging.INFO)
 
-def send_to_google_form(data):
+# ================= КНОПКИ =================
+
+MAIN = ReplyKeyboardMarkup(
+    [["✨ Подобрать услугу"], ["📋 Показать все услуги"]],
+    resize_keyboard=True
+)
+
+CATEGORIES = ReplyKeyboardMarkup(
+    [["💨 Быстро", "💆‍♀️ Уход"],
+     ["✨ Эффектно"],
+     ["🔙 Назад"]],
+    resize_keyboard=True
+)
+
+FAST = ReplyKeyboardMarkup(
+    [["💅 Маникюр экспресс"],
+     ["🎨 Снятие + покрытие"],
+     ["🔙 Назад"]],
+    resize_keyboard=True
+)
+
+CARE = ReplyKeyboardMarkup(
+    [["💆‍♀️ Маникюр + SPA-уход"],
+     ["🫧 Парафинотерапия"],
+     ["🔙 Назад"]],
+    resize_keyboard=True
+)
+
+EFFECT = ReplyKeyboardMarkup(
+    [["✨ Маникюр + дизайн"],
+     ["💎 Авторский дизайн"],
+     ["🔙 Назад"]],
+    resize_keyboard=True
+)
+
+UPSELL = ReplyKeyboardMarkup(
+    [["➕ Добавить дизайн"],
+     ["➕ Добавить уход"],
+     ["❌ Без допов"]],
+    resize_keyboard=True
+)
+
+# ================= УТИЛИТЫ =================
+
+def next_order_id():
+    if not os.path.exists(ID_FILE):
+        with open(ID_FILE, "w") as f:
+            f.write("0")
+
+    with open(ID_FILE, "r+") as f:
+        last = int(f.read())
+        new = last + 1
+        f.seek(0)
+        f.write(str(new))
+        f.truncate()
+
+    return str(new).zfill(7)
+
+
+def is_phone(text: str) -> bool:
+    return bool(re.fullmatch(r"\+?\d{10,15}", text))
+
+
+def send_to_google_form(data: dict):
     payload = {
-        ENTRY_NAME: data.get("name", ""),
-        ENTRY_PHONE: data.get("phone", ""),
-        ENTRY_SERVICE: data.get("service", ""),
-        ENTRY_DATE: data.get("date", ""),
-        ENTRY_COMMENT: data.get("comment", ""),
-        ENTRY_NUMBER: data.get("number", "")
+        FORM_FIELDS["name"]: data["name"],
+        FORM_FIELDS["phone"]: data["phone"],
+        FORM_FIELDS["service"]: data["service"],
+        FORM_FIELDS["date"]: data["date"],
+        FORM_FIELDS["comment"]: data["comment"],
     }
-    requests.post(GOOGLE_FORM_URL, data=payload)
+    requests.post(GOOGLE_FORM_URL, data=payload, timeout=10)
 
-# ===================== МЕНЮ =====================
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("✨ Подобрать услугу", "💰 Цены")
-    markup.add("📅 Записаться", "📍 Контакты")
-    markup.add("❓ Помощь")
-    bot.send_message(message.chat.id,
-                     "💅 Привет! Я помощник салона.\nПомогу записаться 💖",
-                     reply_markup=markup)
+def upsell_text(service: str) -> str:
+    if "дизайн" not in service.lower():
+        return "💎 Хочешь добавить дизайн? Маникюр будет выглядеть эффектнее ✨"
+    return "🫧 Добавим уход? Кожа станет мягче и результат продержится дольше 💖"
 
-# ===================== ОБРАБОТКА КНОПОК =====================
 
-@bot.message_handler(func=lambda m: m.text == "💰 Цены")
-def prices(message):
-    text = "💅 Наши цены:\n\nМаникюр — от 1000 ₽\nСтрижка — от 800 ₽\nБрови — от 500 ₽"
-    bot.send_message(message.chat.id, text)
+# ================= ХЭНДЛЕРЫ =================
 
-@bot.message_handler(func=lambda m: m.text == "📍 Контакты")
-def contacts(message):
-    bot.send_message(message.chat.id, "📍 Наш адрес: г. Москва, ул. Примерная, 1\n📞 Телефон: +7 999 999-99-99")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text(
+        "💅 Привет! Я помощник салона.\nПомогу записаться 💖",
+        reply_markup=MAIN
+    )
 
-@bot.message_handler(func=lambda m: m.text == "❓ Помощь")
-def help_menu(message):
-    bot.send_message(message.chat.id, "Вы можете выбрать услугу, посмотреть цены, записаться или узнать контакты салона.")
 
-# ===================== ПОДБОР УСЛУГИ =====================
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
 
-@bot.message_handler(func=lambda m: m.text == "✨ Подобрать услугу")
-def pick_priority(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("💨 Быстро", "✨ Эффектно", "💆‍♀️ Уход")
-    markup.add("🔙 В меню")
-    bot.send_message(message.chat.id, "Что для тебя важнее сегодня?", reply_markup=markup)
+    # --- Главное меню ---
+    if text == "✨ Подобрать услугу":
+        await update.message.reply_text("Что для тебя важнее сегодня?", reply_markup=CATEGORIES)
+        return
 
-@bot.message_handler(func=lambda m: m.text in ["💨 Быстро", "✨ Эффектно", "💆‍♀️ Уход"])
-def recommend_service(message):
-    priority = message.text
-    services = {
-        "💨 Быстро": ["Экспресс-маникюр (40 мин)"],
-        "✨ Эффектно": ["Маникюр + дизайн", "Стрижка + укладка"],
-        "💆‍♀️ Уход": ["Маникюр + SPA-уход", "Макияж"]
-    }
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    for s in services[priority]:
-        markup.add(s)
-    markup.add("🔄 Другая опция", "🔙 В меню")
-    bot.send_message(message.chat.id, f"✨ Рекомендую:", reply_markup=markup)
+    if text == "📋 Показать все услуги":
+        await update.message.reply_text("Выбери категорию 👇", reply_markup=CATEGORIES)
+        return
 
-@bot.message_handler(func=lambda m: m.text in ["🔄 Другая опция", "🔙 В меню"])
-def go_back_or_repeat(message):
-    if message.text == "🔙 В меню":
-        start(message)
-    else:
-        pick_priority(message)
+    if text == "🔙 Назад":
+        await update.message.reply_text("Главное меню", reply_markup=MAIN)
+        return
 
-# ===================== ЗАПИСЬ НА УСЛУГУ =====================
+    # --- Категории ---
+    if text == "💨 Быстро":
+        await update.message.reply_text("Быстрые услуги ⚡", reply_markup=FAST)
+        return
 
-@bot.message_handler(func=lambda m: True)
-def ask_info(message):
-    text = message.text
-    if text not in ["✨ Подобрать услугу", "💰 Цены", "📅 Записаться", "📍 Контакты", "❓ Помощь",
-                    "💨 Быстро", "✨ Эффектно", "💆‍♀️ Уход", "🔄 Другая опция", "🔙 В меню"]:
-        if "service" not in user_data:
-            user_data["service"] = text
-            bot.send_message(message.chat.id, "Как тебя зовут?")
-        elif "name" not in user_data:
-            user_data["name"] = text
-            bot.send_message(message.chat.id, "Оставь номер телефона 📞")
-        elif "phone" not in user_data:
-            user_data["phone"] = text
-            bot.send_message(message.chat.id, "На какую дату хочешь записаться? (например: 5 февраля)")
-        elif "date" not in user_data:
-            user_data["date"] = text
-            bot.send_message(message.chat.id, "Если есть комментарий к записи, напиши его. Если нет — отправь '-'")
-        elif "comment" not in user_data:
-            user_data["comment"] = text
-            user_data["number"] = next_request_number()
-            # Отправляем в Google Form
-            send_to_google_form(user_data)
-            # Уведомляем администратора
-            bot.send_message(ADMIN_ID,
-                             f"🆕 Новая заявка #{user_data['number']}\n"
-                             f"{user_data['name']} | {user_data['phone']}\n"
-                             f"{user_data['service']} | {user_data['date']}\n"
-                             f"Комментарий: {user_data['comment']}")
-            bot.send_message(message.chat.id,
-                             f"✅ Запись принята! Номер заявки: {user_data['number']}\nАдминистратор скоро свяжется с тобой 💖")
-            user_data.clear()  # очищаем данные после записи
+    if text == "💆‍♀️ Уход":
+        await update.message.reply_text("Уходовые процедуры 💖", reply_markup=CARE)
+        return
 
-# ===================== ЗАПУСК =====================
-bot.infinity_polling()
+    if text == "✨ Эффектно":
+        await update.message.reply_text("Эффектные услуги ✨", reply_markup=EFFECT)
+        return
+
+    # --- Выбор услуги ---
+    if any(word in text for word in ["Маникюр", "Снятие", "Парафино", "дизайн"]):
+        context.user_data["service"] = text
+        await update.message.reply_text(upsell_text(text), reply_markup=UPSELL)
+        return
+
+    # --- Апселл ---
+    if text in ["➕ Добавить дизайн", "➕ Добавить уход"]:
+        context.user_data["service"] += f" + {text.replace('➕ ', '')}"
+        await update.message.reply_text("Как тебя зовут?")
+        return
+
+    if text == "❌ Без допов":
+        await update.message.reply_text("Как тебя зовут?")
+        return
+
+    # --- Имя ---
+    if "name" not in context.user_data:
+        context.user_data["name"] = text
+        await update.message.reply_text("Оставь номер телефона 📞\nФормат: +79991234567")
+        return
+
+    # --- Телефон ---
+    if "phone" not in context.user_data:
+        if not is_phone(text):
+            await update.message.reply_text("❌ Номер некорректный. Попробуй ещё раз")
+            return
+        context.user_data["phone"] = text
+        await update.message.reply_text("На какую дату хочешь записаться? (например: 5 февраля)")
+        return
+
+    # --- Дата ---
+    if "date" not in context.user_data:
+        context.user_data["date"] = text
+        await update.message.reply_text("Комментарий к записи? Если нет — отправь '-'")
+        return
+
+    # --- Комментарий / финал ---
+    context.user_data["comment"] = text
+    order_id = next_order_id()
+
+    send_to_google_form(context.user_data)
+
+    await update.message.reply_text(
+        f"🆕 Новая заявка #{order_id}\n\n"
+        f"{context.user_data['name']} | {context.user_data['phone']}\n"
+        f"{context.user_data['service']}\n"
+        f"Дата: {context.user_data['date']}\n"
+        f"Комментарий: {context.user_data['comment']}\n\n"
+        f"✅ Запись принята! Администратор скоро свяжется 💖",
+        reply_markup=MAIN
+    )
+
+    # админу
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"📥 Заявка #{order_id}\n{context.user_data}"
+    )
+
+    context.user_data.clear()
+
+
+# ================= ЗАПУСК =================
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
