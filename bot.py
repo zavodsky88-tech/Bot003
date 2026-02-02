@@ -22,25 +22,27 @@ FORM_FIELDS = {
 
 def send_to_google_form(data: dict):
     """
-    Отправляет данные пользователя в Google Form
+    Отправляет данные в Google Form через POST-запрос.
+    Формат для formResponse.
     """
+    GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd_QdRSLL99UZUfgC3fvRPhiGCmSGKty_eqe-suR43yWDezzA/formResponse"
+
     payload = {
-        FORM_FIELDS["name"]: data.get("name", "-"),
-        FORM_FIELDS["phone"]: data.get("phone", "-"),
-        FORM_FIELDS["service"]: data.get("service", "-"),
-        FORM_FIELDS["date"]: data.get("date", "-"),
-        FORM_FIELDS["comment"]: data.get("comment", "-"),
-        FORM_FIELDS["order_id"]: data.get("order_id", "-")
+        "entry.2110379223": data["name"],        # Имя
+        "entry.1234675755": data["phone"],       # Телефон
+        "entry.1260653739": data["service"],     # Услуга
+        "entry.490319395": data["date"],         # Дата
+        "entry.1667947668": data["comment"],     # Комментарий
+        "entry.2029165293": data.get("order_id", ""),  # order_id
     }
 
     try:
         response = requests.post(GOOGLE_FORM_URL, data=payload, timeout=10)
-        if response.status_code == 200:
-            logging.info("Заявка успешно отправлена в Google Form")
-        else:
-            logging.error("Ошибка при отправке в Google Form: %s", response.status_code)
-    except requests.exceptions.RequestException as e:
-        logging.error("Ошибка при соединении с Google Form: %s", e)
+        response.raise_for_status()
+        print(f"Заявка #{data.get('order_id')} успешно отправлена в Google Form")
+    except requests.RequestException as e:
+        print(f"Ошибка при отправке в Google Form: {e}")
+
 
 ID_FILE = "order_id.txt"
 
