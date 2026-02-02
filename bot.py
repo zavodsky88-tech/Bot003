@@ -3,19 +3,11 @@ import os
 import re
 import requests
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # ================= НАСТРОЙКИ =================
-
-TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"  # токен бота
-ADMIN_ID = 1979125261  # твой Telegram ID
-
+TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"
+ADMIN_ID = 1979125261
 GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1Qj4hWyDn_fw0YyWYA2Igdr9Fyi5Sn0p4XHdcrdSXlJQ/formResponse"
 
 FORM_FIELDS = {
@@ -29,17 +21,13 @@ FORM_FIELDS = {
 ID_FILE = "order_id.txt"
 
 # ================= ЛОГИ =================
-
 logging.basicConfig(level=logging.INFO)
 
 # ================= КНОПКИ =================
-
 MAIN = ReplyKeyboardMarkup(
-    [
-        ["✨ Подобрать услугу", "📅 Записаться"],
-        ["💰 Цены", "📍 Контакты"],
-        ["❓ Помощь"]
-    ],
+    [["✨ Подобрать услугу", "📅 Записаться"],
+     ["💰 Цены", "📍 Контакты"],
+     ["❓ Помощь"]],
     resize_keyboard=True
 )
 
@@ -80,39 +68,27 @@ UPSELL = ReplyKeyboardMarkup(
 )
 
 # ================= УТИЛИТЫ =================
-
 def next_order_id():
     if not os.path.exists(ID_FILE):
         with open(ID_FILE, "w") as f:
             f.write("0")
-
     with open(ID_FILE, "r+") as f:
         last = int(f.read())
         new = last + 1
         f.seek(0)
         f.write(str(new))
         f.truncate()
-
     return str(new).zfill(7)
-
 
 def is_phone(text: str) -> bool:
     return bool(re.fullmatch(r"\+?\d{10,15}", text))
 
-
 def send_to_google_form(data: dict):
-    payload = {
-        FORM_FIELDS["name"]: data["name"],
-        FORM_FIELDS["phone"]: data["phone"],
-        FORM_FIELDS["service"]: data["service"],
-        FORM_FIELDS["date"]: data["date"],
-        FORM_FIELDS["comment"]: data["comment"],
-    }
+    payload = {FORM_FIELDS[k]: data[k] for k in FORM_FIELDS}
     try:
         requests.post(GOOGLE_FORM_URL, data=payload, timeout=10)
     except Exception as e:
         logging.error(f"Ошибка отправки формы: {e}")
-
 
 def upsell_text(service: str) -> str:
     if "дизайн" not in service.lower():
@@ -120,77 +96,22 @@ def upsell_text(service: str) -> str:
     return "🫧 Добавим уход? Кожа станет мягче и результат продержится дольше 💖"
 
 # ================= ХЭНДЛЕРЫ =================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text(
-        "💅 Привет! Я помощник салона.\nПомогу записаться 💖",
-        reply_markup=MAIN
-    )
-
+    await update.message.reply_text("💅 Привет! Я помощник салона.\nПомогу записаться 💖",
+                                    reply_markup=MAIN)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
-    # ===== СТАТИЧЕСКИЕ РАЗДЕЛЫ =====
-    if text == "💰 Цены":
-        await update.message.reply_text(
-            "💰 Прайс-лист:\n\n"
-            "💅 Маникюр — от 1500₽\n"
-            "✨ Маникюр + дизайн — от 2000₽\n"
-            "💆‍♀️ SPA-уход — от 800₽\n\n"
-            "Точная стоимость зависит от сложности 💖",
-            reply_markup=MAIN
-        )
-        return
-    
-    if text == "📍 Контакты":
-        await update.message.reply_text(
-            "📍 Мы находимся:\n"
-            "г. Москва, ул. Примерная, 12\n\n"
-            "📞 +7 999 123-45-67\n"
-            "🕒 Ежедневно с 10:00 до 21:00",
-            reply_markup=MAIN
-        )
-        return
-    
-    if text == "❓ Помощь":
-        await update.message.reply_text(
-            "❓ Чем я могу помочь:\n\n"
-            "• Подобрать услугу\n"
-            "• Записать к мастеру\n"
-            "• Рассказать цены\n"
-            "• Передать заявку администратору\n\n"
-            "Просто нажми нужную кнопку 👇",
-            reply_markup=MAIN
-        )
-        return
-    
-    if text == "📅 Записаться" or text == "✨ Подобрать услугу":
-        await update.message.reply_text(
-            "Что для тебя важнее сегодня?", reply_markup=CATEGORIES
-        )
-        return
-
-    if text == "📋 Показать все услуги":
-        await update.message.reply_text("Выбери категорию 👇", reply_markup=CATEGORIES)
-        return
-
-    if text == "🔙 Назад":
-        await update.message.reply_text("Главное меню", reply_markup=MAIN)
+    # --- Главное меню ---
+    if text in ["💰 Цены", "📍 Контакты", "❓ Помощь", "📅 Записаться", "✨ Подобрать услугу", "📋 Показать все услуги", "🔙 Назад"]:
+        await handle_static_sections(update, context, text)
         return
 
     # --- Категории ---
-    if text == "💨 Быстро":
-        await update.message.reply_text("Быстрые услуги ⚡", reply_markup=FAST)
-        return
-
-    if text == "💆‍♀️ Уход":
-        await update.message.reply_text("Уходовые процедуры 💖", reply_markup=CARE)
-        return
-
-    if text == "✨ Эффектно":
-        await update.message.reply_text("Эффектные услуги ✨", reply_markup=EFFECT)
+    if text in ["💨 Быстро", "💆‍♀️ Уход", "✨ Эффектно"]:
+        await handle_categories(update, context, text)
         return
 
     # --- Выбор услуги ---
@@ -233,10 +154,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Комментарий / финал ---
     context.user_data["comment"] = text
     order_id = next_order_id()
-
     send_to_google_form(context.user_data)
 
-    # Отправка пользователю
     await update.message.reply_text(
         f"🆕 Новая заявка #{order_id}\n\n"
         f"{context.user_data['name']} | {context.user_data['phone']}\n"
@@ -247,16 +166,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=MAIN
     )
 
-    # Администратору
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=f"📥 Заявка #{order_id}\n{context.user_data}"
-    )
-
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 Заявка #{order_id}\n{context.user_data}")
     context.user_data.clear()
 
-# ================= ЗАПУСК =================
+# ================= ОБРАБОТЧИКИ СТАТИЧЕСКИХ РАЗДЕЛОВ И КАТЕГОРИЙ =================
+async def handle_static_sections(update, context, text):
+    if text == "💰 Цены":
+        await update.message.reply_text(
+            "💰 Прайс-лист:\n💅 Маникюр — от 1500₽\n✨ Маникюр + дизайн — от 2000₽\n💆‍♀️ SPA-уход — от 800₽",
+            reply_markup=MAIN)
+    elif text == "📍 Контакты":
+        await update.message.reply_text("📍 Москва, ул. Примерная, 12\n📞 +7 999 123-45-67\n🕒 10:00-21:00", reply_markup=MAIN)
+    elif text == "❓ Помощь":
+        await update.message.reply_text("Помощь:\n• Подобрать услугу\n• Записать к мастеру\n• Передать заявку", reply_markup=MAIN)
+    elif text in ["📅 Записаться", "✨ Подобрать услугу", "📋 Показать все услуги"]:
+        await update.message.reply_text("Выбери категорию 👇", reply_markup=CATEGORIES)
+    elif text == "🔙 Назад":
+        await update.message.reply_text("Главное меню", reply_markup=MAIN)
 
+async def handle_categories(update, context, text):
+    if text == "💨 Быстро":
+        await update.message.reply_text("Быстрые услуги ⚡", reply_markup=FAST)
+    elif text == "💆‍♀️ Уход":
+        await update.message.reply_text("Уходовые процедуры 💖", reply_markup=CARE)
+    elif text == "✨ Эффектно":
+        await update.message.reply_text("Эффектные услуги ✨", reply_markup=EFFECT)
+
+# ================= ЗАПУСК =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
