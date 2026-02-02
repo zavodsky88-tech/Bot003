@@ -119,81 +119,104 @@ def upsell_text(service: str) -> str:
         return "💎 Хочешь добавить дизайн? Маникюр будет выглядеть эффектнее ✨"
     return "🫧 Добавим уход? Кожа станет мягче и результат продержится дольше 💖"
 
-# ================= ХЭНДЛЕРЫ =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
-    await update.message.reply_text("💅 Привет! Я помощник салона.\nПомогу записаться 💖",
-                                    reply_markup=MAIN)
+# ================= ХЭНДЛЕР =================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    user_data = context.user_data
 
     # --- Главное меню ---
-    if text in ["💰 Цены", "📍 Контакты", "❓ Помощь", "📅 Записаться", "✨ Подобрать услугу", "📋 Показать все услуги", "🔙 Назад"]:
-        await handle_static_sections(update, context, text)
+    if text in ["💰 Цены", "📍 Контакты", "❓ Помощь", "✨ Подобрать услугу", "📅 Записаться", "📋 Показать все услуги", "🔙 Назад"]:
+        user_data.clear()
+        if text == "💰 Цены":
+            await update.message.reply_text(
+                "💅 Маникюр — от 1500₽\n✨ Маникюр + дизайн — от 2000₽\n💆‍♀️ SPA-уход — от 800₽",
+                reply_markup=MAIN
+            )
+        elif text == "📍 Контакты":
+            await update.message.reply_text(
+                "📍 Мы находимся:\nг. Москва, ул. Примерная, 12\n📞 +7 999 123-45-67\n🕒 10:00-21:00",
+                reply_markup=MAIN
+            )
+        elif text == "❓ Помощь":
+            await update.message.reply_text(
+                "❓ Я могу помочь:\n• Подобрать услугу\n• Записать к мастеру\n• Рассказать цены\n• Передать заявку админу",
+                reply_markup=MAIN
+            )
+        else:
+            await update.message.reply_text("Выбери категорию 👇", reply_markup=CATEGORIES)
         return
 
     # --- Категории ---
     if text in ["💨 Быстро", "💆‍♀️ Уход", "✨ Эффектно"]:
-        await handle_categories(update, context, text)
+        user_data["category"] = text
+        if text == "💨 Быстро":
+            await update.message.reply_text("Быстрые услуги ⚡", reply_markup=FAST)
+        elif text == "💆‍♀️ Уход":
+            await update.message.reply_text("Уходовые процедуры 💖", reply_markup=CARE)
+        elif text == "✨ Эффектно":
+            await update.message.reply_text("Эффектные услуги ✨", reply_markup=EFFECT)
         return
 
     # --- Выбор услуги ---
-    if any(word in text for word in ["Маникюр", "Снятие", "Парафино", "дизайн"]):
-        context.user_data["service"] = text
+    if "service" not in user_data and any(word in text for word in ["Маникюр", "Снятие", "Парафино", "дизайн"]):
+        user_data["service"] = text
         await update.message.reply_text(upsell_text(text), reply_markup=UPSELL)
+        user_data["awaiting_upsell"] = True
         return
 
     # --- Апселл ---
-    if "service" in context.user_data and "upsell_done" not in context.user_data:
+    if user_data.get("awaiting_upsell"):
         if text in ["➕ Добавить дизайн", "➕ Добавить уход"]:
-            context.user_data["service"] += f" + {text.replace('➕ ', '')}"
-        # ❌ Без допов — ничего не добавляем
-        context.user_data["upsell_done"] = True
+            user_data["service"] += f" + {text.replace('➕ ', '')}"
+        user_data.pop("awaiting_upsell")
         await update.message.reply_text("Как тебя зовут?")
         return
 
-
-
     # --- Имя ---
-    if "name" not in context.user_data:
-        # Любой текст здесь — имя
-        context.user_data["name"] = text
+    if "name" not in user_data:
+        user_data["name"] = text
         await update.message.reply_text("Оставь номер телефона 📞\nФормат: +79991234567")
         return
-    
+
     # --- Телефон ---
-    if "phone" not in context.user_data:
+    if "phone" not in user_data:
         if not is_phone(text):
             await update.message.reply_text("❌ Номер некорректный. Попробуй ещё раз")
             return
-        context.user_data["phone"] = text
+        user_data["phone"] = text
         await update.message.reply_text("На какую дату хочешь записаться? (например: 5 февраля)")
         return
 
     # --- Дата ---
-    if "date" not in context.user_data:
-        context.user_data["date"] = text
+    if "date" not in user_data:
+        user_data["date"] = text
         await update.message.reply_text("Комментарий к записи? Если нет — отправь '-'")
         return
 
     # --- Комментарий / финал ---
-    context.user_data["comment"] = text
-    order_id = next_order_id()
-    send_to_google_form(context.user_data)
+    if "comment" not in user_data:
+        user_data["comment"] = text
+        order_id = next_order_id()
+        user_data["order_id"] = order_id
 
-    await update.message.reply_text(
-        f"🆕 Новая заявка #{order_id}\n\n"
-        f"{context.user_data['name']} | {context.user_data['phone']}\n"
-        f"{context.user_data['service']}\n"
-        f"Дата: {context.user_data['date']}\n"
-        f"Комментарий: {context.user_data['comment']}\n\n"
-        f"✅ Запись принята! Администратор скоро свяжется 💖",
-        reply_markup=MAIN
-    )
+        send_to_google_form(user_data)
 
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 Заявка #{order_id}\n{context.user_data}")
-    context.user_data.clear()
+        # Ответ пользователю
+        await update.message.reply_text(
+            f"🆕 Заявка #{order_id}\n"
+            f"{user_data['name']} | {user_data['phone']}\n"
+            f"{user_data['service']}\n"
+            f"Дата: {user_data['date']}\n"
+            f"Комментарий: {user_data['comment']}\n\n"
+            "✅ Запись принята! Администратор скоро свяжется 💖",
+            reply_markup=MAIN
+        )
+
+        # Уведомление админу
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 Заявка #{order_id}\n{user_data}")
+
+        user_data.clear()
 
 # ================= ОБРАБОТЧИКИ СТАТИЧЕСКИХ РАЗДЕЛОВ И КАТЕГОРИЙ =================
 async def handle_static_sections(update, context, text):
