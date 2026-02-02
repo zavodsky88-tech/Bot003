@@ -3,8 +3,10 @@ import requests
 import os
 
 # === Telegram ===
-TOKEN = os.getenv("BOT_TOKEN")  # вставляешь свой токен
-ADMIN_ID = int(os.getenv("ADMIN_ID"))  # твой Telegram ID
+#TOKEN = os.getenv("BOT_TOKEN")  # вставляешь свой токен
+#ADMIN_ID = int(os.getenv("ADMIN_ID"))  # твой Telegram ID
+TOKEN = 8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI  # вставляешь свой токен
+ADMIN_ID = 1979125261  # твой Telegram ID
 
 bot = telebot.TeleBot(TOKEN)
 
