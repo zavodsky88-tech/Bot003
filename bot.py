@@ -13,8 +13,8 @@ from telegram.ext import (
 
 # ================= НАСТРОЙКИ =================
 
-TOKEN = os.getenv("8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI")  # токен бота
-ADMIN_ID = int(os.getenv("1979125261"))  # твой Telegram ID
+TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"  # токен бота
+ADMIN_ID = 1979125261 # твой Telegram ID
 
 GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/XXXXXXXXXXXX/formResponse"
 
