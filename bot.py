@@ -163,9 +163,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         order_id = next_order_id()
         data['order_id'] = order_id
         send_to_google_form(data)
-        await update.message.reply_text(f'✅ Заявка #{order_id} принята!
-{data["name"]} | {data["phone"]}
-{data["service"]} — {data["date"]}', reply_markup=MAIN_MENU)
+    await update.message.reply_text(
+        f"✅ Заявка #{order_id} принята!\n"
+        f"{data['name']} | {data['phone']}\n"
+        f"{data['service']} — {data['date']}",
+        reply_markup=MAIN_MENU
+    )
+
         clean_data = {k:v for k,v in data.items() if k != 'step'}
         await context.bot.send_message(chat_id=ADMIN_ID, text=f'📥 Новая заявка #{order_id}\n{clean_data}')
         data.clear()
