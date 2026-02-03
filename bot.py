@@ -81,21 +81,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data
     step = data.get("step")
 
+    SERVICE_BUTTONS = [
+        "💅 Маникюр",
+        "✨ Маникюр + дизайн",
+        "💆‍♀️ Уход"
+    ]
+    if step != "service" and text in SERVICE_BUTTONS:
+        await update.message.reply_text("⚠️ Сначала закончим текущую запись 🙂")
+        return
+
+
     # --- ШАГ: услуга ---
     if step == "service":
         data["service"] = text
         data["step"] = "name"
-        await update.message.reply_text("Как тебя зовут?")
+        await update.message.reply_text(
+            "Как тебя зовут?",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
         return
 
     # --- ШАГ: имя ---
     if step == "name":
+        if not is_name(text):
+            await update.message.reply_text("❌ Введи имя буквами")
+            return
+    
         data["name"] = text
         data["step"] = "phone"
         await update.message.reply_text(
             "Номер телефона 📞\nФормат: +79991234567"
         )
         return
+
 
     # --- ШАГ: телефон ---
     if step == "phone":
@@ -129,11 +148,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{data['service']} — {data['date']}",
             reply_markup=MAIN
         )
+        clean_data = {k: v for k, v in data.items() if k != "step"}
 
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"📥 Новая заявка #{order_id}\n{data}"
+            text=f"📥 Новая заявка #{order_id}\n{clean_data}"
         )
+
 
         data.clear()
 
