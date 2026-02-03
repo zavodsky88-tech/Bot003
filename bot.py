@@ -3,7 +3,11 @@ import os
 import re
 import requests
 
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -24,7 +28,7 @@ FORM_FIELDS = {
     "phone": "entry.1234675755",
     "service": "entry.1260653739",
     "date": "entry.490319395",
-    "comment": "entry.1667947668",    
+    "comment": "entry.1667947668",
 }
 
 ID_FILE = "order_id.txt"
@@ -36,6 +40,20 @@ MAIN = ReplyKeyboardMarkup(
     [["✨ Записаться"]],
     resize_keyboard=True
 )
+
+SERVICES = ReplyKeyboardMarkup(
+    [
+        ["💅 Маникюр", "✨ Маникюр + дизайн"],
+        ["💆‍♀️ Уход"],
+    ],
+    resize_keyboard=True
+)
+
+SERVICE_BUTTONS = {
+    "💅 Маникюр",
+    "✨ Маникюр + дизайн",
+    "💆‍♀️ Уход",
+}
 
 # ================= УТИЛИТЫ =================
 def next_order_id():
@@ -57,6 +75,10 @@ def is_phone(text: str) -> bool:
     return bool(re.fullmatch(r"\+?\d{10,15}", text))
 
 
+def is_name(text: str) -> bool:
+    return bool(re.fullmatch(r"[А-Яа-яA-Za-z\s\-]{2,30}", text))
+
+
 def send_to_google_form(data: dict):
     payload = {FORM_FIELDS[k]: data.get(k, "") for k in FORM_FIELDS}
     requests.post(GOOGLE_FORM_URL, data=payload, timeout=10)
@@ -69,37 +91,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "Привет! 💖\nДавай запишемся ✨\nКакую услугу хочешь?",
-        reply_markup=ReplyKeyboardMarkup(
-            [["💅 Маникюр", "✨ Маникюр + дизайн"],
-             ["💆‍♀️ Уход"]],
-            resize_keyboard=True
-        )
+        reply_markup=SERVICES
     )
+
+
 # ================= ОСНОВНОЙ ХЭНДЛЕР =================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     data = context.user_data
     step = data.get("step")
 
-    SERVICE_BUTTONS = [
-        "💅 Маникюр",
-        "✨ Маникюр + дизайн",
-        "💆‍♀️ Уход"
-    ]
-    if step != "service" and text in SERVICE_BUTTONS:
+    # --- защита от кнопок вне шага услуги ---
+    if text in SERVICE_BUTTONS and step != "service":
         await update.message.reply_text("⚠️ Сначала закончим текущую запись 🙂")
         return
 
-
     # --- ШАГ: услуга ---
     if step == "service":
+        if text not in SERVICE_BUTTONS:
+            await update.message.reply_text("Пожалуйста, выбери услугу кнопкой 👇")
+            return
+
         data["service"] = text
         data["step"] = "name"
+
         await update.message.reply_text(
             "Как тебя зовут?",
             reply_markup=ReplyKeyboardRemove()
         )
-
         return
 
     # --- ШАГ: имя ---
@@ -107,14 +126,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_name(text):
             await update.message.reply_text("❌ Введи имя буквами")
             return
-    
+
         data["name"] = text
         data["step"] = "phone"
+
         await update.message.reply_text(
             "Номер телефона 📞\nФормат: +79991234567"
         )
         return
-
 
     # --- ШАГ: телефон ---
     if step == "phone":
@@ -124,6 +143,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         data["phone"] = text
         data["step"] = "date"
+
         await update.message.reply_text("На какую дату?")
         return
 
@@ -131,32 +151,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if step == "date":
         data["date"] = text
         data["step"] = "comment"
+
         await update.message.reply_text("Комментарий? Если нет — '-'")
         return
 
     # --- ШАГ: комментарий / финал ---
     if step == "comment":
         data["comment"] = text
-        order_id = next_order_id()
-        data["order_id"] = order_id
+        data["order_id"] = next_order_id()
 
         send_to_google_form(data)
 
         await update.message.reply_text(
-            f"✅ Заявка #{order_id} принята!\n"
+            f"✅ Заявка #{data['order_id']} принята!\n"
             f"{data['name']} | {data['phone']}\n"
             f"{data['service']} — {data['date']}",
             reply_markup=MAIN
         )
+
         clean_data = {k: v for k, v in data.items() if k != "step"}
 
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"📥 Новая заявка #{order_id}\n{clean_data}"
+            text=f"📥 Новая заявка #{data['order_id']}\n{clean_data}"
         )
 
-
         data.clear()
+        return
+
+    # --- если FSM сломан ---
+    await update.message.reply_text("Нажми /start 🙂")
 
 
 # ================= ЗАПУСК =================
