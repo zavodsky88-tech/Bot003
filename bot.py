@@ -145,8 +145,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         data['name'] = text
         data['step'] = 'phone'
-        await update.message.reply_text('Номер телефона 📞
-Формат: +79991234567')
+        await update.message.reply_text('Номер телефона 📞 Формат: +79991234567')
         return
 
     if step == 'phone':
