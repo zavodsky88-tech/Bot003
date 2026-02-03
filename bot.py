@@ -3,9 +3,8 @@ import os
 import re
 import requests
 from datetime import datetime, timedelta
-
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 
 # ================= НАСТРОЙКИ =================
 TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"
@@ -22,7 +21,6 @@ FORM_FIELDS = {
 }
 
 ID_FILE = "order_id.txt"
-
 logging.basicConfig(level=logging.INFO)
 
 # ================= УТИЛИТЫ =================
@@ -52,10 +50,7 @@ def send_to_google_form(data: dict):
         logging.error(f"Ошибка отправки формы: {e}")
 
 # ================= КНОПКИ =================
-MAIN_MENU = ReplyKeyboardMarkup(
-    [["✨ Записаться"]],
-    resize_keyboard=True
-)
+MAIN_MENU = ReplyKeyboardMarkup([["✨ Записаться"]], resize_keyboard=True)
 
 SERVICE_BUTTONS = [
     "💅 Маникюр",
@@ -68,7 +63,6 @@ SERVICE_BUTTONS = [
 ]
 
 def service_keyboard(page=0, per_page=4):
-    # разбиваем кнопки на страницы
     start = page * per_page
     end = start + per_page
     buttons = [[s] for s in SERVICE_BUTTONS[start:end]]
@@ -81,14 +75,14 @@ def service_keyboard(page=0, per_page=4):
         buttons.append(navigation)
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
-def calendar_keyboard():
-    # простой текстовый календарь на 7 дней вперед
-    today = datetime.now()
+def inline_calendar(start_date: datetime = None, days=7):
+    if not start_date:
+        start_date = datetime.now()
     buttons = []
-    for i in range(7):
-        day = today + timedelta(days=i)
-        buttons.append([day.strftime("%d %B %Y")])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+    for i in range(days):
+        day = start_date + timedelta(days=i)
+        buttons.append([InlineKeyboardButton(day.strftime("%d %B %Y"), callback_data=day.strftime("%Y-%m-%d"))])
+    return InlineKeyboardMarkup(buttons)
 
 # ================= /start =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,7 +90,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["step"] = "service"
     context.user_data["page"] = 0
     await update.message.reply_text(
-        "Привет! 💖\nЯ твой персональный помощник салона ✨\nВыбери услугу, и мы быстро оформим запись 💅",
+        "Привет! 💖\nЯ твой персональный помощник салона ✨\nВыбери услугу 💅",
         reply_markup=service_keyboard()
     )
 
@@ -144,14 +138,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         data["phone"] = text
         data["step"] = "date"
-        await update.message.reply_text("Выбери дату 📅", reply_markup=calendar_keyboard())
-        return
-
-    # --- ШАГ: дата ---
-    if step == "date":
-        data["date"] = text
-        data["step"] = "comment"
-        await update.message.reply_text("Комментарий к записи? Если нет — напиши '-'")
+        await update.message.reply_text("Выбери дату 📅", reply_markup=inline_calendar())
         return
 
     # --- ШАГ: комментарий / финал ---
@@ -159,7 +146,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["comment"] = text
         order_id = next_order_id()
         data["order_id"] = order_id
-
         send_to_google_form(data)
 
         await update.message.reply_text(
@@ -169,20 +155,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=MAIN_MENU
         )
 
-        # Отправка админу
         clean_data = {k: v for k, v in data.items() if k != "step"}
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=f"📥 Новая заявка #{order_id}\n{clean_data}"
-        )
-
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 Новая заявка #{order_id}\n{clean_data}")
         data.clear()
+
+# ================= CALLBACK-КАЛЕНДАРЬ =================
+async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    selected_date = query.data
+    context.user_data["date"] = selected_date
+    context.user_data["step"] = "comment"
+    await query.message.edit_text(f"Выбрана дата: {selected_date}\nТеперь напиши комментарий к записи или '-' если без него")
 
 # ================= ЗАПУСК =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(calendar_callback))
     app.run_polling()
 
 if __name__ == "__main__":
