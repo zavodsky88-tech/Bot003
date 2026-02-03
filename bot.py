@@ -1,16 +1,16 @@
 import logging
+from datetime import datetime, timedelta
 import os
 import re
 import requests
-from datetime import datetime, timedelta
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # ================= НАСТРОЙКИ =================
 TOKEN = "8542034986:AAHlph-7hJgQn_AxH2PPXhZLUPUKTkztbiI"
 ADMIN_ID = 1979125261
-GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd_QdRSLL99UZUfgC3fvRPhiGCmSGKty_eqe-suR43yWDezzA/formResponse"
+GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSd_QdRSLL99UZUfgC3fvRPhiGCmSGKty_eqe-suR43yWDezzAformResponse"
 
 FORM_FIELDS = {
     "order_id": "entry.2029165293",
@@ -22,16 +22,7 @@ FORM_FIELDS = {
 }
 
 ID_FILE = "order_id.txt"
-
 logging.basicConfig(level=logging.INFO)
-
-# ================= КНОПКИ =================
-MAIN = ReplyKeyboardMarkup([["✨ Записаться"]], resize_keyboard=True)
-
-SERVICES = [
-    ["💅 Маникюр", "✨ Маникюр + дизайн"],
-    ["💆‍♀️ Уход"]
-]
 
 # ================= УТИЛИТЫ =================
 def next_order_id():
@@ -59,26 +50,39 @@ def send_to_google_form(data: dict):
     except Exception as e:
         logging.error(f"Ошибка отправки формы: {e}")
 
-# ================= КАЛЕНДАРЬ =================
-def get_calendar_buttons(start_date=None):
-    start_date = start_date or datetime.today()
-    buttons = []
-    for i in range(7):  # показываем неделю
-        day = start_date + timedelta(days=i)
-        buttons.append([day.strftime("%d %b")])
-    buttons.append(["⬅️ Назад", "➡️ Вперёд"])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+# ================= УСЛУГИ =================
+SERVICES = [
+    ["💅 Маникюр", "✨ Маникюр + дизайн"],
+    ["💆‍♀️ Уход", "💇‍♀️ Стрижка женская"],
+    ["💇‍♂️ Стрижка мужская", "💅 Педикюр", "👁️ Брови"]
+]
 
-# ================= /start =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data["step"] = "service"
     await update.message.reply_text(
-        "Привет! 💖\nДавай запишемся ✨\nКакую услугу хочешь?",
+        "Привет! 💖\nДавай запишемся ✨\nВыбери услугу:",
         reply_markup=ReplyKeyboardMarkup(SERVICES, resize_keyboard=True)
     )
 
-# ================= ОБРАБОТЧИК =================
+# ================= КАЛЕНДАРЬ =================
+RUS_MONTHS = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
+
+def get_calendar_buttons(start_date=None):
+    start_date = start_date or datetime.today()
+    keyboard = []
+    for i in range(7):
+        day = start_date + timedelta(days=i)
+        text = f"{day.day} {RUS_MONTHS[day.month-1]}"
+        keyboard.append([InlineKeyboardButton(text, callback_data=f"date_{day.strftime('%Y-%m-%d')}")])
+    keyboard.append([
+        InlineKeyboardButton("⬅️ Назад", callback_data="prev_week"),
+        InlineKeyboardButton("➡️ Вперёд", callback_data="next_week")
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+# ================= ХЭНДЛЕР ТЕКСТА =================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     data = context.user_data
@@ -112,56 +116,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Выбери дату:", reply_markup=get_calendar_buttons())
         return
 
-    # --- Дата с календаря ---
-    if step == "date":
-        if text == "⬅️ Назад":
-            data["calendar_start"] -= timedelta(days=7)
-            await update.message.reply_text("Выбери дату:", reply_markup=get_calendar_buttons(data["calendar_start"]))
-            return
-        elif text == "➡️ Вперёд":
-            data["calendar_start"] += timedelta(days=7)
-            await update.message.reply_text("Выбери дату:", reply_markup=get_calendar_buttons(data["calendar_start"]))
-            return
-        else:
-            try:
-                chosen_date = datetime.strptime(text, "%d %b")
-                data["date"] = text
-                data["step"] = "comment"
-                await update.message.reply_text("Комментарий? Если нет — '-'", reply_markup=MAIN)
-            except ValueError:
-                data["date"] = text  # просто сохраняем текст
-                data["step"] = "comment"
-                await update.message.reply_text("Комментарий? Если нет — '-'", reply_markup=MAIN)
-            return
-
-    # --- Комментарий / Финал ---
+    # --- Комментарий ---
     if step == "comment":
         data["comment"] = text
         order_id = next_order_id()
         data["order_id"] = order_id
-
         send_to_google_form(data)
         clean_data = {k: v for k, v in data.items() if k != "step"}
-
         await update.message.reply_text(
             f"✅ Заявка #{order_id} принята!\n"
             f"{data['name']} | {data['phone']}\n"
-            f"{data['service']} — {data['date']}",
-            reply_markup=MAIN
+            f"{data['service']} — {data['date']}"
         )
-
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=f"📥 Новая заявка #{order_id}\n{clean_data}"
-        )
-
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"📥 Новая заявка #{order_id}\n{clean_data}")
         data.clear()
+
+# ================= CALLBACK ДЛЯ КАЛЕНДАРЯ =================
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = context.user_data
+
+    if query.data.startswith("date_"):
+        selected_date = query.data.split("_")[1]
+        data["date"] = selected_date
+        data["step"] = "comment"
+        await query.message.reply_text("Комментарий? Если нет — '-'")
+        return
+    elif query.data == "next_week":
+        data["calendar_start"] += timedelta(days=7)
+        await query.message.edit_reply_markup(reply_markup=get_calendar_buttons(data["calendar_start"]))
+    elif query.data == "prev_week":
+        data["calendar_start"] -= timedelta(days=7)
+        await query.message.edit_reply_markup(reply_markup=get_calendar_buttons(data["calendar_start"]))
 
 # ================= ЗАПУСК =================
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.run_polling()
 
 if __name__ == "__main__":
