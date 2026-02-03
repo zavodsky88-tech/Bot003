@@ -101,25 +101,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data
     step = data.get("step")
 
-    # --- защита от кнопок вне шага услуги ---
-    if text in SERVICE_BUTTONS and step != "service":
-        await update.message.reply_text("⚠️ Сначала закончим текущую запись 🙂")
-        return
-
     # --- ШАГ: услуга ---
     if step == "service":
         if text not in SERVICE_BUTTONS:
             await update.message.reply_text("Пожалуйста, выбери услугу кнопкой 👇")
             return
-
+    
         data["service"] = text
         data["step"] = "name"
-
         await update.message.reply_text(
             "Как тебя зовут?",
             reply_markup=ReplyKeyboardRemove()
         )
         return
+
 
     # --- ШАГ: имя ---
     if step == "name":
