@@ -3,7 +3,7 @@ import os
 import re
 import requests
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 # ================= НАСТРОЙКИ =================
@@ -27,7 +27,8 @@ logging.basicConfig(level=logging.INFO)
 # ================= КНОПКИ =================
 MAIN_MENU = ReplyKeyboardMarkup([["✨ Записаться"]], resize_keyboard=True)
 
-SERVICES = ["💅 Маникюр", "✨ Маникюр + дизайн", "✂️ Стрижка женская", "✂️ Стрижка мужская", "🦶 Педикюр", "👁️ Брови"]
+SERVICES = ["💅 Маникюр", "✨ Маникюр + дизайн", "✂️ Стрижка женская",
+            "✂️ Стрижка мужская", "🦶 Педикюр", "👁️ Брови"]
 SERVICES_PER_PAGE = 3
 
 # ================= УТИЛИТЫ =================
@@ -46,6 +47,9 @@ def next_order_id():
 def is_phone(text: str) -> bool:
     return bool(re.fullmatch(r"\+?\d{10,15}", text))
 
+def is_name(text: str) -> bool:
+    return bool(re.fullmatch(r"[А-Яа-яЁё\s\-]+", text.strip()))
+
 def send_to_google_form(data: dict):
     payload = {FORM_FIELDS[k]: data.get(k, "") for k in FORM_FIELDS}
     try:
@@ -56,6 +60,7 @@ def send_to_google_form(data: dict):
 # ================= КАЛЕНДАРЬ =================
 def build_calendar(year: int, month: int):
     keyboard = []
+
     first_day = datetime(year, month, 1)
     start_weekday = first_day.weekday()  # понедельник=0
 
@@ -67,24 +72,21 @@ def build_calendar(year: int, month: int):
     keyboard.append([InlineKeyboardButton(d, callback_data='ignore') for d in week_days])
 
     # Кнопки дней
-    days_buttons = []
-    day_num = 1
     last_day = (first_day.replace(month=month % 12 + 1, day=1) - timedelta(days=1)).day
     week = []
     for _ in range(start_weekday):
-        week.append(InlineKeyboardButton(' ', callback_data='ignore'))
-    while day_num <= last_day:
-        week.append(InlineKeyboardButton(f"{day_num}", callback_data=f"date:{year}-{month:02d}-{day_num:02d}"))
+        week.append(InlineKeyboardButton(" ", callback_data="ignore"))
+    for day in range(1, last_day + 1):
+        week.append(InlineKeyboardButton(str(day), callback_data=f"date:{year}-{month:02d}-{day:02d}"))
         if len(week) == 7:
             keyboard.append(week)
             week = []
-        day_num += 1
     if week:
         while len(week) < 7:
-            week.append(InlineKeyboardButton(' ', callback_data='ignore'))
+            week.append(InlineKeyboardButton(" ", callback_data="ignore"))
         keyboard.append(week)
 
-    # Листание месяцев
+    # Навигация по месяцам
     prev_month = first_day - timedelta(days=1)
     next_month = first_day + timedelta(days=31)
     keyboard.append([
@@ -99,6 +101,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data['step'] = 'service'
     context.user_data['page'] = 0
+    await update.message.reply_text(
+        "Привет! 💖 Я твой персональный помощник салона ✨\nВыбери услугу 💅"
+    )
     await show_services(update, context, 0)
 
 async def show_services(update, context, page: int):
@@ -113,7 +118,10 @@ async def show_services(update, context, page: int):
         nav_buttons.append('➡️ Вперед')
     if nav_buttons:
         buttons.append(nav_buttons)
-    await update.message.reply_text('Выбирай услугу:', reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+    await update.message.reply_text(
+        'Выбирай услугу:',
+        reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+    )
 
 # ================= ОБРАБОТЧИК МЕССЕДЖЕЙ =================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,13 +143,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         data['service'] = text
         data['step'] = 'name'
-        await update.message.reply_text('Как тебя зовут?', reply_markup=ReplyKeyboardMarkup([["⬅️ Назад в услуги"]], resize_keyboard=True))
+        await update.message.reply_text(
+            'Как тебя зовут? 😊',
+            reply_markup=ReplyKeyboardMarkup([["⬅️ Назад в услуги"]], resize_keyboard=True)
+        )
         return
 
     if step == 'name':
         if text == '⬅️ Назад в услуги':
             data['step'] = 'service'
             await show_services(update, context, data.get('page',0))
+            return
+        if not is_name(text):
+            await update.message.reply_text('❌ Введи имя буквами, пожалуйста')
             return
         data['name'] = text
         data['step'] = 'phone'
@@ -155,31 +169,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data['phone'] = text
         data['step'] = 'date'
         now = datetime.now()
-        await update.message.reply_text('Выбери дату:', reply_markup=build_calendar(now.year, now.month))
+        await update.message.reply_text(
+            '📅 Отлично! Теперь выбери дату для записи:',
+            reply_markup=build_calendar(now.year, now.month)
+        )
         return
 
     if step == 'comment':
         data['comment'] = text
         order_id = next_order_id()
         data['order_id'] = order_id
-    
+
         send_to_google_form(data)
-    
+
         await update.message.reply_text(
             f"✅ Заявка #{order_id} принята!\n"
             f"{data['name']} | {data['phone']}\n"
             f"{data['service']} — {data['date']}",
             reply_markup=MAIN_MENU
         )
-    
+
         clean_data = {k: v for k, v in data.items() if k != 'step'}
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"📥 Новая заявка #{order_id}\n{clean_data}"
         )
-    
-        data.clear()
 
+        data.clear()
 
 # ================= CALLBACK ДЛЯ КАЛЕНДАРЯ =================
 async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,7 +216,9 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_str = data.split(':')[1]
         context.user_data['date'] = date_str
         context.user_data['step'] = 'comment'
-        await query.message.reply_text('Комментарий? Если нет — '-'')
+        await query.message.reply_text(
+            "✨ Замечательно! Добавь комментарий к записи или отправь '-' если без комментария."
+        )
         await query.message.delete()
 
 # ================= ЗАПУСК =================
