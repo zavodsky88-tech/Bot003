@@ -65,56 +65,74 @@ def send_to_google_form(data: dict):
 # ================= /start =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    context.user_data["step"] = "service"
+
     await update.message.reply_text(
         "Привет! 💖\nДавай запишемся ✨\nКакую услугу хочешь?",
-        reply_markup=MAIN
+        reply_markup=ReplyKeyboardMarkup(
+            [["💅 Маникюр", "✨ Маникюр + дизайн"],
+             ["💆‍♀️ Уход"]],
+            resize_keyboard=True
+        )
     )
-
-
 # ================= ОСНОВНОЙ ХЭНДЛЕР =================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    text = update.message.text.strip()
     data = context.user_data
+    step = data.get("step")
 
-    if "service" not in data:
+    # --- ШАГ: услуга ---
+    if step == "service":
         data["service"] = text
+        data["step"] = "name"
         await update.message.reply_text("Как тебя зовут?")
         return
 
-    if "name" not in data:
+    # --- ШАГ: имя ---
+    if step == "name":
         data["name"] = text
-        await update.message.reply_text("Номер телефона 📞\nФормат: +79991234567")
+        data["step"] = "phone"
+        await update.message.reply_text(
+            "Номер телефона 📞\nФормат: +79991234567"
+        )
         return
 
-    if "phone" not in data:
+    # --- ШАГ: телефон ---
+    if step == "phone":
         if not is_phone(text):
             await update.message.reply_text("❌ Некорректный номер, попробуй ещё раз")
             return
+
         data["phone"] = text
+        data["step"] = "date"
         await update.message.reply_text("На какую дату?")
         return
 
-    if "date" not in data:
+    # --- ШАГ: дата ---
+    if step == "date":
         data["date"] = text
+        data["step"] = "comment"
         await update.message.reply_text("Комментарий? Если нет — '-'")
         return
 
-    if "comment" not in data:
+    # --- ШАГ: комментарий / финал ---
+    if step == "comment":
         data["comment"] = text
-        data["order_id"] = next_order_id()
+        order_id = next_order_id()
+        data["order_id"] = order_id
 
         send_to_google_form(data)
 
         await update.message.reply_text(
-            f"✅ Заявка #{data['order_id']} принята!\n"
+            f"✅ Заявка #{order_id} принята!\n"
             f"{data['name']} | {data['phone']}\n"
             f"{data['service']} — {data['date']}",
             reply_markup=MAIN
         )
 
         await context.bot.send_message(
-            ADMIN_ID,
-            f"📥 Новая заявка #{data['order_id']}\n{data}"
+            chat_id=ADMIN_ID,
+            text=f"📥 Новая заявка #{order_id}\n{data}"
         )
 
         data.clear()
